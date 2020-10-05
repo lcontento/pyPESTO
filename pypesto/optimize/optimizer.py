@@ -1,10 +1,11 @@
+import math
 import numpy as np
 import scipy.optimize
 import re
 import abc
 import time
 import logging
-from typing import Dict
+from typing import Dict, Optional, Union
 
 from ..objective import (OptimizerHistory, HistoryOptions, CsvHistory)
 from ..objective.history import HistoryBase
@@ -25,6 +26,16 @@ try:
     import pyswarm
 except ImportError:
     pyswarm = None
+
+try:
+    import cma
+except ImportError:
+    cma = None
+
+try:
+    import nlopt
+except ImportError:
+    nlopt = None
 
 EXITFLAG_LOADED_FROM_FILE = -99
 
@@ -74,6 +85,7 @@ def history_decorator(minimize):
         objective.history = HistoryBase()
 
         return result
+
     return wrapped_minimize
 
 
@@ -92,6 +104,7 @@ def time_decorator(minimize):
         used_time = time.time() - start_time
         result.time = used_time
         return result
+
     return wrapped_minimize
 
 
@@ -116,6 +129,7 @@ def fix_decorator(minimize):
                     f"n_fval={result.n_fval}.")
 
         return result
+
     return wrapped_minimize
 
 
@@ -428,6 +442,12 @@ class IpoptOptimizer(Optimizer):
             id: str,
             history_options: HistoryOptions = None,
     ) -> OptimizerResult:
+
+        if ipopt is None:
+            raise ImportError(
+                "This optimizer requires an installation of ipopt."
+            )
+
         objective = problem.objective
 
         bounds = np.array([problem.lb, problem.ub]).T
@@ -461,15 +481,15 @@ class DlibOptimizer(Optimizer):
     """
 
     def __init__(self,
-                 method: str,
                  options: Dict = None):
         super().__init__()
-
-        self.method = method
 
         self.options = options
         if self.options is None:
             self.options = DlibOptimizer.get_default_options(self)
+        elif 'maxiter' not in self.options:
+            raise KeyError('Dlib options are missing the key word '
+                           'maxiter.')
 
     @fix_decorator
     @time_decorator
@@ -515,7 +535,7 @@ class DlibOptimizer(Optimizer):
         return False
 
     def get_default_options(self):
-        return {}
+        return {'maxiter': 10000}
 
 
 class PyswarmOptimizer(Optimizer):
@@ -558,3 +578,201 @@ class PyswarmOptimizer(Optimizer):
 
     def is_least_squares(self):
         return False
+
+
+class CmaesOptimizer(Optimizer):
+    """
+    Global optimization using cma-es.
+    Package homepage: https://pypi.org/project/cma-es/
+    """
+
+    def __init__(self, par_sigma0: float = 0.25, options: Dict = None):
+        """
+        Parameters
+        ----------
+        par_sigma0:
+            scalar, initial standard deviation in each coordinate.
+            par_sigma0 should be about 1/4th of the search domain width
+            (where the optimum is to be expected)
+        options:
+            Optimizer options that are directly passed on to cma.
+        """
+
+        super().__init__()
+
+        if options is None:
+            options = {'maxiter': 10000}
+        self.options = options
+        self.par_sigma0 = par_sigma0
+
+    @fix_decorator
+    @time_decorator
+    @history_decorator
+    def minimize(
+            self,
+            problem: Problem,
+            x0: np.ndarray,
+            id: str,
+            history_options: HistoryOptions = None,
+    ) -> OptimizerResult:
+
+        lb = problem.lb
+        ub = problem.ub
+        sigma0 = self.par_sigma0 * np.median(ub - lb)
+        self.options['bounds'] = [lb, ub]
+
+        if cma is None:
+            raise ImportError(
+                "This optimizer requires an installation of cma.")
+
+        result = cma.CMAEvolutionStrategy(
+            x0, sigma0, inopts=self.options,
+        ).optimize(problem.objective.get_fval).result
+
+        optimizer_result = OptimizerResult(x=np.array(result[0]),
+                                           fval=result[1])
+
+        return optimizer_result
+
+    def is_least_squares(self):
+        return False
+
+
+class NLoptOptimizer(Optimizer):
+    """
+    Global optimization using NLopt.
+    Package homepage: https://nlopt.readthedocs.io/en/latest/
+    """
+
+    def __init__(self,
+                 algorithm: str = 'LD_LBFGS',
+                 *,
+                 rtol: Optional[float] = None,
+                 atol: Optional[float] = None,
+                 maxeval: Optional[int] = None,
+                 maxtime: Optional[Union[float, int]] = None,
+                 vector_storage: Optional[int] = None,
+    ):
+        """
+        Parameters
+        ----------
+        algorithm:
+            NLopt algorithm to use
+        rtol:
+             relative tolerance on optimization parameters
+        atol:
+             absolute tolerance on optimization parameters
+        maxeval:
+             maximum number of function evaluations
+        maxtime:
+             time limit in seconds
+        vector_storage:
+             number of stored vectors for limited-memory quasi-Newton algorithms
+        """
+
+        if nlopt is None:
+            raise ImportError(
+                "This optimizer requires an installation of NLopt."
+            )
+
+        super().__init__()
+
+        self.algorithm = algorithm
+        self.rtol = rtol
+        self.atol = atol
+        self.maxeval = maxeval
+        self.maxtime = maxtime
+        self.vector_storage = vector_storage
+
+    @fix_decorator
+    @time_decorator
+    @history_decorator
+    def minimize(
+            self,
+            problem: Problem,
+            x0: np.ndarray,
+            id: str,
+            history_options: HistoryOptions = None,
+    ) -> OptimizerResult:
+
+        if not problem.objective.has_fun:
+            raise Exception("For this optimizer, the objective must "
+                            "be able to return function values.")
+
+        opt = nlopt.opt(getattr(nlopt, self.algorithm), problem.dim)
+
+        obj = problem.objective
+        def fun(x, grad):
+            if grad.size > 0:
+                fval, _grad = obj(x, (0, 1))
+                # if not all_finite(_grad):
+                #     raise nlopt.ForcedStop
+                np.copyto(grad, _grad)
+            else:
+                fval = obj(x, (0,))
+            # if math.isnan(fval):
+            #     raise nlopt.ForcedStop
+            return fval
+        opt.set_min_objective(fun)
+
+        opt.set_lower_bounds(problem.lb)
+        opt.set_upper_bounds(problem.ub)
+
+        if self.rtol is not None:
+            opt.set_xtol_rel(self.rtol)
+        if self.atol is not None:
+            opt.set_xtol_abs(self.atol)
+        if self.maxeval is not None:
+            opt.set_maxeval(self.maxeval)
+        if self.maxtime is not None:
+            opt.set_maxtime(self.maxtime)
+        if self.vector_storage is not None:
+            opt.set_vector_storage(self.vector_storage)
+
+        try:
+            xopt = opt.optimize(x0)
+        except (nlopt.RoundoffLimited, nlopt.ForcedStop):
+            # Return partial result anyway
+            pass
+
+        fval = opt.last_optimum_value()
+        exitflag = opt.last_optimize_result()
+        grad = obj(xopt, (1,)) if obj.has_grad else None
+
+        if exitflag == nlopt.SUCCESS:
+            message = "Success."
+        elif exitflag == nlopt.NLOPT_FTOL_REACHED:
+            message = "Stopped because ftol_rel or ftol_abs was reached."
+        elif exitflag == nlopt.XTOL_REACHED:
+            message = "Stopped because xtol_rel or xtol_abs was reached."
+        elif exitflag == nlopt.MAXEVAL_REACHED:
+            message = "Stopped because maxeval was reached."
+        elif exitflag == nlopt.MAXTIME_REACHED:
+            message = "Stopped because maxtime was reached."
+        elif exitflag == nlopt.ROUNDOFF_LIMITED:
+            message = "Halted because roundoff errors limited progress."
+        # elif exitflag == nlopt.FORCED_STOP:
+        #     message = "Halted because fval was NaN or the gradient was not finite."
+        else:
+            raise Exception(f'Unexpected exitflag {exitflag}')
+
+        optimizer_result = OptimizerResult(
+            x=xopt,
+            fval=fval,
+            grad=grad,
+            exitflag=exitflag,
+            message=message
+        )
+
+        return optimizer_result
+
+    def is_least_squares(self):
+        return False
+
+# import numba
+# @numba.jit(nopython=True, nogil=True)
+# def all_finite(a):
+#     for x in a:
+#         if not np.isfinite(x):
+#             return False
+#     return True
