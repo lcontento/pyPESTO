@@ -279,7 +279,27 @@ class ScipyOptimizer(Optimizer):
     def __init__(self,
                  method: str = 'L-BFGS-B',
                  tol: float = 1e-9,
-                 options: Dict = None):
+                 options: Dict = None,
+                 maxtime: Optional[Union[float, int]] = None
+    ):
+        """
+        Parameters
+        ----------
+        method:
+            Optimization method.
+            May be one of the methods accepted by `scipy.optimize.minimize`
+            or, if prepended by `'ls_'`, one of the methods accepted by
+            `scipy.optimize.least_squares`.
+        tol:
+            Tolerance for termination.
+            For detailed control, use solver-specific options.
+        options:
+            Options for the SciPy optimizer
+            (supported options are optimizer-specific).
+        maxtime:
+            Time limit in seconds.
+        """
+
         super().__init__()
 
         self.method = method
@@ -290,6 +310,10 @@ class ScipyOptimizer(Optimizer):
             self.options['ftol'] = tol
         elif self.options is not None and 'ftol' not in self.options:
             self.options['ftol'] = tol
+
+        self.maxtime = maxtime
+        if self.maxtime is not None and self.is_least_squares():
+            raise ValueError('cannot use maxtime options with LS solvers')
 
     @fix_decorator
     @time_decorator
@@ -380,17 +404,35 @@ class ScipyOptimizer(Optimizer):
             if hessp is not None:
                 hess = None
 
+            if self.maxtime is not None:
+                callback = TimeoutCallback(self.maxtime)
+            else:
+                callback = None
+
             # optimize
-            res = scipy.optimize.minimize(
-                fun=fun,
-                x0=x0,
-                method=self.method,
-                jac=jac,
-                hess=hess,
-                hessp=hessp,
-                bounds=bounds,
-                options=self.options,
-            )
+            try:
+                res = scipy.optimize.minimize(
+                    fun=fun,
+                    x0=x0,
+                    method=self.method,
+                    jac=jac,
+                    hess=hess,
+                    hessp=hessp,
+                    bounds=bounds,
+                    options=self.options,
+                    callback=callback,
+                )
+
+            except TimeoutException as ex:
+                return OptimizerResult(
+                    x=ex.x,
+                    fval=fun(ex.x),
+                    grad=jac(ex.x) if jac is not None else None,
+                    hess=hess(ex.x) if hess is not None else None,
+                    exitflag=None,
+                    message="Time limit reached."
+                )
+
             # extract fval/grad from result
             grad = getattr(res, 'jac', None)
             fval = res.fun
@@ -411,11 +453,26 @@ class ScipyOptimizer(Optimizer):
         return re.match(r'(?i)^(ls_)', self.method)
 
     def get_default_options(self):
-        if self.is_least_squares:
+        if self.is_least_squares():
             options = {'max_nfev': 1000, 'disp': False}
         else:
             options = {'maxiter': 1000, 'disp': False}
         return options
+
+
+class TimeoutCallback:
+    def __init__(self, maxtime):
+        self.tmax = time.time() + maxtime
+
+    def __call__(self, xk, *args):
+        if time.time() > self.tmax:
+            raise TimeoutException(xk)
+
+
+class TimeoutException(Exception):
+    def __init__(self, x: np.ndarray):
+        self.x = x.copy()
+        # make a copy just in case the memory is not managed by numpy
 
 
 class IpoptOptimizer(Optimizer):
