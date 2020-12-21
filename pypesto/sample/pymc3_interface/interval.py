@@ -217,7 +217,7 @@ class ScaleAwareLowerBound(pm.distributions.transforms.ElemwiseTransform):
         if np.asarray(a).ndim != 0:
             raise NotImplementedError('ScaleAwareLowerBound implemented only for float a')
         super().__init__()
-        self.a = tt.as_tensor_variable(a)
+        a = tt.as_tensor_variable(a)
         if jitter_scale is not None and testval is None:
             raise ValueError(
                 'if testval is not given, jitter_scale cannot be given'
@@ -227,9 +227,13 @@ class ScaleAwareLowerBound(pm.distributions.transforms.ElemwiseTransform):
                 raise ValueError('jitter_scale must be > 0')
             if testval <= a:
                 raise ValueError('testval cannot be <= a')
-            self.alpha = floatX(jitter_scale / (testval - a))
+            jitter_scale = tt.as_tensor_variable(jitter_scale)
+            testval = tt.as_tensor_variable(testval)
+            alpha = jitter_scale / (testval - a)
         else:
-            self.alpha = floatX(1.0)
+            alpha = floatX(1.0)
+        self.a = a
+        self.alpha = alpha
 
     def backward(self, x):
         return self.a + tt.exp(self.alpha * x)
@@ -252,7 +256,7 @@ class ScaleAwareUpperBound(pm.distributions.transforms.ElemwiseTransform):
         if np.asarray(b).ndim != 0:
             raise NotImplementedError('ScaleAwareUpperBound implemented only for float b')
         super().__init__()
-        self.b = tt.as_tensor_variable(b)
+        b = tt.as_tensor_variable(b)
         if jitter_scale is not None and testval is None:
             raise ValueError(
                 'if testval is not given, jitter_scale cannot be given'
@@ -262,9 +266,13 @@ class ScaleAwareUpperBound(pm.distributions.transforms.ElemwiseTransform):
                 raise ValueError('jitter_scale must be > 0')
             if testval >= b:
                 raise ValueError('testval cannot be >= b')
-            self.alpha = floatX(jitter_scale / (b - testval))
+            jitter_scale = tt.as_tensor_variable(jitter_scale)
+            testval = tt.as_tensor_variable(testval)
+            alpha = jitter_scale / (b - testval)
         else:
-            self.alpha = floatX(1.0)
+            alpha = floatX(1.0)
+        self.b = b
+        self.alpha = alpha
 
     def backward(self, x):
         return self.b - tt.exp(self.alpha * x)
@@ -306,7 +314,7 @@ class ScaleAwareIdentity(pm.distributions.transforms.ElemwiseTransform):
         if jitter_scale is not None:
             if jitter_scale <= 0:
                 raise ValueError('jitter_scale must be > 0')
-            self.alpha = floatX(jitter_scale)
+            self.alpha = tt.as_tensor_variable(jitter_scale)
         else:
             self.alpha = floatX(1.0)
 
