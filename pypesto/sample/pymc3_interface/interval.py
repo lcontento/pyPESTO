@@ -217,7 +217,7 @@ class ScaleAwareLowerBound(pm.distributions.transforms.ElemwiseTransform):
         if np.asarray(a).ndim != 0:
             raise NotImplementedError('ScaleAwareLowerBound implemented only for float a')
         super().__init__()
-        a = tt.as_tensor_variable(a)
+        _a = tt.as_tensor_variable(a)
         if jitter_scale is not None and testval is None:
             raise ValueError(
                 'if testval is not given, jitter_scale cannot be given'
@@ -229,10 +229,10 @@ class ScaleAwareLowerBound(pm.distributions.transforms.ElemwiseTransform):
                 raise ValueError('testval cannot be <= a')
             jitter_scale = tt.as_tensor_variable(jitter_scale)
             testval = tt.as_tensor_variable(testval)
-            alpha = jitter_scale / (testval - a)
+            alpha = jitter_scale / (testval - _a)
         else:
             alpha = floatX(1.0)
-        self.a = a
+        self.a = _a
         self.alpha = alpha
 
     def backward(self, x):
@@ -256,7 +256,7 @@ class ScaleAwareUpperBound(pm.distributions.transforms.ElemwiseTransform):
         if np.asarray(b).ndim != 0:
             raise NotImplementedError('ScaleAwareUpperBound implemented only for float b')
         super().__init__()
-        b = tt.as_tensor_variable(b)
+        _b = tt.as_tensor_variable(b)
         if jitter_scale is not None and testval is None:
             raise ValueError(
                 'if testval is not given, jitter_scale cannot be given'
@@ -268,10 +268,10 @@ class ScaleAwareUpperBound(pm.distributions.transforms.ElemwiseTransform):
                 raise ValueError('testval cannot be >= b')
             jitter_scale = tt.as_tensor_variable(jitter_scale)
             testval = tt.as_tensor_variable(testval)
-            alpha = jitter_scale / (b - testval)
+            alpha = jitter_scale / (_b - testval)
         else:
             alpha = floatX(1.0)
-        self.b = b
+        self.b = _b
         self.alpha = alpha
 
     def backward(self, x):
