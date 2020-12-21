@@ -9,6 +9,7 @@ can be controlled.
 import numpy as np
 
 import pymc3 as pm
+from pymc3.theanof import floatX
 
 import theano.tensor as tt
 from theano.ifelse import ifelse
@@ -74,29 +75,37 @@ def ScaleAwareUniform(name, *, lower, upper, jitter_scale=None,
         #                            lerp_method=lerp_method, scalar=scalar)
         # return pm.Uniform(name, lower=lower, upper=upper,
         #                   transform=transform, **kwargs)
-    elif jitter_scale is not None:
-        raise NotImplementedError('jitter_scale for unbounded supports '
-                                  'has not been implemented yet.')
+
     elif scalar:
         if lower == -np.inf:
             if upper == np.inf:
-                return pm.Flat(name, **kwargs)
+                BoundedFlat = pm.Bound(pm.Flat)
+                transform = ScaleAwareIdentity(jitter_scale=jitter_scale)
+                return BoundedFlat(name, transform=transform, **kwargs)
             else:
                 BoundedFlat = pm.Bound(pm.Flat, upper=upper)
-                return BoundedFlat(name, **kwargs)
+                transform = ScaleAwareUpperBound(
+                    upper,
+                    testval=kwargs.get('testval', None),
+                    jitter_scale=jitter_scale,
+                )
+                return BoundedFlat(name, transform=transform, **kwargs)
         else:
             assert upper == np.inf
-            if lower == 0:
-                return pm.HalfFlat(name, **kwargs)
-            else:
-                BoundedFlat = pm.Bound(pm.Flat, lower=lower)
-                return BoundedFlat(name, **kwargs)
+            BoundedFlat = pm.Bound(pm.Flat, lower=lower)
+            transform = ScaleAwareLowerBound(
+                lower,
+                testval=kwargs.get('testval', None),
+                jitter_scale=jitter_scale,
+            )
+            return BoundedFlat(name, transform=transform, **kwargs)
+
     else:
         raise NotImplementedError('in the non-scalar case, unbounded supports '
                                   'have not been implemented yet.')
 
 class ScaleAwareInterval(pm.distributions.transforms.Interval):
-    name = "betterinterval"
+    name = "scaleawareinterval"
     def __init__(self, a, b, *,
                  jitter_scale=None, testval=None,
                  lerp_method='convex', scalar=None):
@@ -162,10 +171,10 @@ class ScaleAwareInterval(pm.distributions.transforms.Interval):
 
     def forward_val(self, x, point=None):
         y = super().forward_val(x, point)
-        if self._alpha is None:
+        if self.alpha is None:
             return y
         else:
-            return np.multiply(self._alpha, y, dtype=y.dtype)
+            return np.multiply(self.alpha, y, dtype=y.dtype)
 
     def backward(self, x):
         a, b = self.a, self.b
@@ -201,6 +210,74 @@ class ScaleAwareInterval(pm.distributions.transforms.Interval):
             raise ValueError(f'unknown lerp method {self.lerp_method}')
 
 
+class ScaleAwareLowerBound(pm.distributions.transforms.ElemwiseTransform):
+    name = "scaleawarelowerbound"
+
+    def __init__(self, a, *, jitter_scale=None, testval=None):
+        if not isinstance(a, float):
+            raise NotImplementedError('ScaleAwareLowerBound implemented only for float a')
+        super().__init__(a)
+        if jitter_scale is not None and testval is None:
+            raise ValueError(
+                'if testval is not given, jitter_scale cannot be given'
+            )
+        if jitter_scale is not None:
+            if jitter_scale <= 0:
+                raise ValueError('jitter_scale must be > 0')
+            if testval <= a:
+                raise ValueError('testval cannot be <= a')
+            self.alpha = floatX(jitter_scale / (testval - a))
+        else:
+            self.alpha = floatX(1.0)
+
+    def backward(self, x):
+        return self.a + tt.exp(self.alpha * x)
+
+    def forward(self, x):
+        return tt.log(x - self.a) / self.alpha
+
+    def forward_val(self, x, point=None):
+        a = draw_values([self.a - 0.0], point=point)[0]
+        return floatX(np.log(x - a) / self.alpha)
+
+    def jacobian_det(self, x):
+        return self.alpha * x + tt.log(self.alpha)
+
+
+class ScaleAwareUpperBound(pm.distributions.transforms.ElemwiseTransform):
+    name = "scaleawareupperbound"
+
+    def __init__(self, b, *, jitter_scale=None, testval=None):
+        if not isinstance(b, float):
+            raise NotImplementedError('ScaleAwareUpperBound implemented only for float b')
+        super().__init__(b)
+        if jitter_scale is not None and testval is None:
+            raise ValueError(
+                'if testval is not given, jitter_scale cannot be given'
+            )
+        if jitter_scale is not None:
+            if jitter_scale <= 0:
+                raise ValueError('jitter_scale must be > 0')
+            if testval >= b:
+                raise ValueError('testval cannot be >= b')
+            self.alpha = floatX(jitter_scale / (b - testval))
+        else:
+            self.alpha = floatX(1.0)
+
+    def backward(self, x):
+        return self.b - tt.exp(self.alpha * x)
+
+    def forward(self, x):
+        return tt.log(self.b - x) / self.alpha
+
+    def forward_val(self, x, point=None):
+        b = draw_values([self.b - 0.0], point=point)[0]
+        return floatX(np.log(b - x) / self.alpha)
+
+    def jacobian_det(self, x):
+        return self.alpha * x + tt.log(self.alpha)
+
+
 class Identity(pm.distributions.transforms.ElemwiseTransform):
     """Identity transformation."""
 
@@ -216,4 +293,29 @@ class Identity(pm.distributions.transforms.ElemwiseTransform):
         return x
 
     def jacobian_det(self, x):
-        return pm.theanof.floatX(0.0)
+        return floatX(0.0)
+
+
+class ScaleAwareIdentity(pm.distributions.transforms.ElemwiseTransform):
+    name = "scaleawareidentity"
+
+    def __init__(self, *, jitter_scale=None):
+        super().__init__()
+        if jitter_scale is not None:
+            if jitter_scale <= 0:
+                raise ValueError('jitter_scale must be > 0')
+            self.alpha = floatX(jitter_scale)
+        else:
+            self.alpha = floatX(1.0)
+
+    def backward(self, x):
+        return self.alpha * x
+
+    def forward(self, x):
+        return x / self.alpha
+
+    def forward_val(self, x, point=None):
+        return x / self.alpha
+
+    def jacobian_det(self, x):
+        return tt.log(self.alpha)
