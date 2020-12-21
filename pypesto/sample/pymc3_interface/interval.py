@@ -79,9 +79,8 @@ def ScaleAwareUniform(name, *, lower, upper, jitter_scale=None,
     elif scalar:
         if lower == -np.inf:
             if upper == np.inf:
-                BoundedFlat = pm.Bound(pm.Flat)
                 transform = ScaleAwareIdentity(jitter_scale=jitter_scale)
-                return BoundedFlat(name, transform=transform, **kwargs)
+                return pm.Flat(name, transform=transform, **kwargs)
             else:
                 BoundedFlat = pm.Bound(pm.Flat, upper=upper)
                 transform = ScaleAwareUpperBound(
@@ -325,7 +324,7 @@ class ScaleAwareIdentity(pm.distributions.transforms.ElemwiseTransform):
         return x / self.alpha
 
     def forward_val(self, x, point=None):
-        return x / self.alpha
+        return floatX(x / self.alpha)
 
     def jacobian_det(self, x):
         return tt.log(self.alpha)
