@@ -211,6 +211,7 @@ class ScaleAwareInterval(pm.distributions.transforms.Interval):
 
 class ScaleAwareLowerBound(pm.distributions.transforms.LowerBound):
     # NB must derive from LowerBound otherwise cannot be pickled (reason unknown)
+    #    must also call super() as much as possible otherwise cannot be pickled (reason unknown)
     name = "scaleawarelowerbound"
 
     def __init__(self, a, *, jitter_scale=None, testval=None):
@@ -246,6 +247,7 @@ class ScaleAwareLowerBound(pm.distributions.transforms.LowerBound):
 
 class ScaleAwareUpperBound(pm.distributions.transforms.UpperBound):
     # NB must derive from UpperBound otherwise cannot be pickled (reason unknown)
+    #    must also call super() as much as possible otherwise cannot be pickled (reason unknown)
     name = "scaleawareupperbound"
 
     def __init__(self, b, *, jitter_scale=None, testval=None):
