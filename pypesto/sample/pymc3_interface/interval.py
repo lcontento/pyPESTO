@@ -214,7 +214,7 @@ class ScaleAwareLowerBound(pm.distributions.transforms.ElemwiseTransform):
     name = "scaleawarelowerbound"
 
     def __init__(self, a, *, jitter_scale=None, testval=None):
-        if not isinstance(a, float):
+        if np.asarray(a).ndims != 0:
             raise NotImplementedError('ScaleAwareLowerBound implemented only for float a')
         super().__init__(a)
         if jitter_scale is not None and testval is None:
@@ -248,7 +248,7 @@ class ScaleAwareUpperBound(pm.distributions.transforms.ElemwiseTransform):
     name = "scaleawareupperbound"
 
     def __init__(self, b, *, jitter_scale=None, testval=None):
-        if not isinstance(b, float):
+        if np.asarray(b).ndims != 0:
             raise NotImplementedError('ScaleAwareUpperBound implemented only for float b')
         super().__init__(b)
         if jitter_scale is not None and testval is None:
