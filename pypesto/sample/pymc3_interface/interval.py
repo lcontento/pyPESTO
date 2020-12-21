@@ -232,17 +232,16 @@ class ScaleAwareLowerBound(pm.distributions.transforms.LowerBound):
         self.alpha = floatX(alpha)
 
     def backward(self, x):
-        return self.a + tt.exp(self.alpha * x)
+        return super().backward(self.alpha * x)
 
     def forward(self, x):
-        return tt.log(x - self.a) / self.alpha
+        return super().forward(x) / self.alpha
 
     def forward_val(self, x, point=None):
-        a = draw_values([self.a - 0.0], point=point)[0]
-        return floatX(np.log(x - a) / self.alpha)
+        return floatX(super().forward_val(x, point=point) / self.alpha)
 
     def jacobian_det(self, x):
-        return self.alpha * x + tt.log(self.alpha)
+        return super().jacobian_det(self.alpha * x) + tt.log(self.alpha)
 
 
 class ScaleAwareUpperBound(pm.distributions.transforms.UpperBound):
@@ -268,17 +267,16 @@ class ScaleAwareUpperBound(pm.distributions.transforms.UpperBound):
         self.alpha = floatX(alpha)
 
     def backward(self, x):
-        return self.b - tt.exp(self.alpha * x)
+        return super().backward(self.alpha * x)
 
     def forward(self, x):
-        return tt.log(self.b - x) / self.alpha
+        return super().forward(x) / self.alpha
 
     def forward_val(self, x, point=None):
-        b = draw_values([self.b - 0.0], point=point)[0]
-        return floatX(np.log(b - x) / self.alpha)
+        return floatX(super().forward_val(x, point=point) / self.alpha)
 
     def jacobian_det(self, x):
-        return self.alpha * x + tt.log(self.alpha)
+        return super().jacobian_det(self.alpha * x) + tt.log(self.alpha)
 
 
 class Identity(pm.distributions.transforms.ElemwiseTransform):
