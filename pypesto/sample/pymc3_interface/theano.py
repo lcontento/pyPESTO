@@ -135,9 +135,11 @@ class LoggingObjective(ObjectiveBase):
         if os.path.exists(self.filename):
             if reset:
                 os.remove(self.filename)
-                pickle.dump([], self.filename)
+                with open(self.filename, 'wb') as f:
+                    pickle.dump([], f)
         else:
-            pickle.dump([], self.filename)
+            with open(self.filename, 'wb') as f:
+                pickle.dump([], f)
 
     def __deepcopy__(self, memodict=None) -> 'LoggingObjective':
         return LoggingObjective(copy.deepcopy(self.objective), self.filename, print_idx=self.print_idx)
@@ -152,12 +154,14 @@ class LoggingObjective(ObjectiveBase):
             mode: str
         ) -> ResultDict:
 
-        log = pickle.load(self.filename)
+        with open(self.filename, 'rb') as f:
+            log = pickle.load(f)
         if self.print_idx:
             print(f"Logging pyPESTO objective call with idx = {len(log)}", file=sys.stderr)
         retval = self.objective.call_unprocessed(x, sensi_orders, mode)
         log.append(dict(x=x, sensi_orders=sensi_orders, mode=mode, retval=retval))
-        pickle.dump(log, self.filename)
+        with open(self.filename, 'wb') as f:
+            pickle.dump(log, f)
         return retval
 
     def check_mode(self, mode) -> bool:
