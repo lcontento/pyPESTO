@@ -11,7 +11,7 @@ import pymc3 as pm
 import theano.tensor as tt
 
 from ...problem import Problem
-from .theano import TheanoLogProbability, CachedObjective
+from .theano import TheanoLogProbability, CachedObjective, LoggingObjective
 from .interval import ScaleAwareUniform, Identity
 
 PYMC3_LOGPOST = 'log_post'
@@ -28,7 +28,8 @@ def create_pymc3_model(problem: Problem,
                        remap_to_reals: bool = True,
                        lerp_method: str = 'convex',
                        check: bool = True,
-                       verbose: bool = False):
+                       verbose: bool = False,
+                       logcalls: Optional[str] = None):
         # Check consistency of arguments
         if jitter_scales is not None:
             if testval is None:
@@ -80,6 +81,8 @@ def create_pymc3_model(problem: Problem,
             objective = problem.objective
             if objective.has_grad and cache_gradients:
                 objective = CachedObjective(objective)
+            if logcalls is not None:
+                objective = LoggingObjective(objective, logcalls, print_idx=True, reset=True)
             log_post_fun = TheanoLogProbability(objective, beta)
 
             # If a test value is given, correct values at the optimization

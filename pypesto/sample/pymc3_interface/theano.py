@@ -7,6 +7,11 @@ from typing import Union, Tuple
 import copy
 import numpy as np
 
+# just for LoggingObjective
+import sys
+import os
+import pickle
+
 from pypesto.objective.base import ObjectiveBase, ResultDict
 from pypesto.objective.constants import MODE_FUN, FVAL, GRAD
 from ...problem import Problem
@@ -99,6 +104,67 @@ class CachedObjective(ObjectiveBase):
             return False
         else:
             return self.objective.check_sensi_orders(sensi_orders, mode)
+
+
+class LoggingObjective(ObjectiveBase):
+    """
+    Wrapper around an ObjectiveBase which logs each call in a pickle file.
+
+    Parameters
+    ----------
+    objective:
+        The `pypesto.ObjectiveBase` to wrap.
+    filename:
+        The path of the file used for logging calls to this objective.
+    print_idx:
+        Whether to print before each call the index inside the log file.
+    reset:
+        Whether to reset the log file.
+    """
+
+    def __init__(self, objective: ObjectiveBase, filename: str, *, print_idx: bool = False, reset: bool = True):
+        if not isinstance(objective, ObjectiveBase):
+            raise TypeError(f'objective must be an ObjectiveBase instance')
+        super().__init__(objective.x_names)
+        assert not hasattr(self, 'objective')
+        assert not hasattr(self, 'filename')
+        assert not hasattr(self, 'print_idx')
+        self.objective = objective
+        self.filename = str(filename)
+        self.print_idx = bool(print_idx)
+        if os.path.exists(self.filename):
+            if reset:
+                os.remove(self.filename)
+                pickle.dump([], self.filename)
+        else:
+            pickle.dump([], self.filename)
+
+    def __deepcopy__(self, memodict=None) -> 'LoggingObjective':
+        return LoggingObjective(copy.deepcopy(self.objective), self.filename, print_idx=self.print_idx)
+
+    def initialize(self):
+        self.objective.initialize()
+
+    def call_unprocessed(
+            self,
+            x: np.ndarray,
+            sensi_orders: Tuple[int, ...],
+            mode: str
+        ) -> ResultDict:
+
+        log = pickle.load(self.filename)
+        if self.print_idx:
+            print(f"Logging pyPESTO objective call with idx = {len(log)}", file=sys.stderr)
+        retval = self.objective.call_unprocessed(x, sensi_orders, mode)
+        log.append(dict(x=x, sensi_orders=sensi_orders, mode=mode, retval=retval))
+        pickle.dump(log, self.filename)
+        return retval
+
+    def check_mode(self, mode) -> bool:
+        return self.objective.check_mode(mode)
+
+    def check_sensi_orders(self, sensi_orders, mode) -> bool:
+        return self.objective.check_sensi_orders(sensi_orders, mode)
 
 
 class TheanoLogProbability(tt.Op):
