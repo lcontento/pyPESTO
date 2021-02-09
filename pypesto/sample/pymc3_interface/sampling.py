@@ -339,7 +339,7 @@ class ResumablePymc3Sampler:
         #          specific samples: can we allow more than one per chain?
         #        * if we add multiple times warnings to the strace,
         #          will we get many duplicates?
-    except Exception as ex:
+        except Exception as ex:
             self._cur_point = None  # invalidate current point
             if rethrow:
                 raise
