@@ -158,10 +158,16 @@ class LoggingObjective(ObjectiveBase):
             log = pickle.load(f)
         if self.print_idx:
             print(f"Logging pyPESTO objective call with idx = {len(log)}", file=sys.stderr)
-        retval = self.objective.call_unprocessed(x, sensi_orders, mode)
-        log.append(dict(x=x, sensi_orders=sensi_orders, mode=mode, retval=retval))
-        with open(self.filename, 'wb') as f:
-            pickle.dump(log, f)
+        try:
+            retval = self.objective.call_unprocessed(x, sensi_orders, mode)
+        except Exception as err:
+            log.append(dict(x=x, sensi_orders=sensi_orders, mode=mode, retval=err))
+            raise
+        else:
+            log.append(dict(x=x, sensi_orders=sensi_orders, mode=mode, retval=retval))
+        finally:
+            with open(self.filename, 'wb') as f:
+                pickle.dump(log, f)
         return retval
 
     def check_mode(self, mode) -> bool:
