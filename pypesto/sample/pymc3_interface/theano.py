@@ -165,7 +165,10 @@ class LoggingObjective(ObjectiveBase):
             log.append(dict(x=x, sensi_orders=sensi_orders, mode=mode, err=err))
             raise
         else:
-            log.append(dict(x=x, sensi_orders=sensi_orders, mode=mode, fval=retval['fval']))
+            if 'fval' in retval.keys():
+                log.append(dict(x=x, sensi_orders=sensi_orders, mode=mode, fval=retval['fval']))
+            else:
+                log.append(dict(x=x, sensi_orders=sensi_orders, mode=mode, retval=retval))
         finally:
             with open(self.filename, 'wb') as f:
                 pickle.dump(log, f)
