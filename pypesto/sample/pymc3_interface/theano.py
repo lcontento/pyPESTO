@@ -162,10 +162,10 @@ class LoggingObjective(ObjectiveBase):
         try:
             retval = self.objective.call_unprocessed(x, sensi_orders, mode)
         except Exception as err:
-            log.append(dict(x=x, sensi_orders=sensi_orders, mode=mode, retval=err))
+            log.append(dict(x=x, sensi_orders=sensi_orders, mode=mode, err=err))
             raise
         else:
-            log.append(dict(x=x, sensi_orders=sensi_orders, mode=mode, retval=retval))
+            log.append(dict(x=x, sensi_orders=sensi_orders, mode=mode, fval=retval['fval']))
         finally:
             with open(self.filename, 'wb') as f:
                 pickle.dump(log, f)
