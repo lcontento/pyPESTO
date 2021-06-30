@@ -130,6 +130,7 @@ class LoggingObjective(ObjectiveBase):
         assert not hasattr(self, 'filename')
         assert not hasattr(self, 'print_idx')
         self.objective = objective
+        self.pre_post_processor = objective.pre_post_processor
         self.filename = str(filename)
         self.print_idx = bool(print_idx)
         if os.path.exists(self.filename):
@@ -142,7 +143,7 @@ class LoggingObjective(ObjectiveBase):
                 pickle.dump([], f)
 
     def __deepcopy__(self, memodict=None) -> 'LoggingObjective':
-        return LoggingObjective(copy.deepcopy(self.objective), self.filename, print_idx=self.print_idx)
+        return LoggingObjective(copy.deepcopy(self.objective), self.filename, print_idx=self.print_idx, reset=False)
 
     def initialize(self):
         self.objective.initialize()
