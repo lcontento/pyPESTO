@@ -249,6 +249,9 @@ class TheanoLogProbabilityGradient(tt.Op):
 
     def perform(self, node, inputs, outputs, params=None):
         theta, = inputs
-        # calculate gradients
-        log_prob_grad = -self._beta * self._objective(theta, sensi_orders=(1,))
+        if np.all(np.isfinite(theta)):
+            log_prob_grad = -self._beta * self._objective(theta, sensi_orders=(1,))
+        else:
+            print('Parameter vector theta contains non-finite elements! Log-probability gradient set to NaN.', file=sys.stderr)
+            log_prob_grad = np.full(theta.shape, np.nan)
         outputs[0][0] = log_prob_grad
