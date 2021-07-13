@@ -208,7 +208,11 @@ class TheanoLogProbability(tt.Op):
 
     def perform(self, node, inputs, outputs, params=None):
         theta, = inputs
-        log_prob = -self._beta * self._objective(theta, sensi_orders=(0,))
+        if np.all(np.isfinite(theta)):
+            log_prob = -self._beta * self._objective(theta, sensi_orders=(0,))
+        else:
+            print('Parameter vector theta contains non-finite elements! Log-probability set to -inf.', file=sys.stderr)
+            log_prob = -np.inf
         outputs[0][0] = np.array(log_prob)
 
     def grad(self, inputs, g):
